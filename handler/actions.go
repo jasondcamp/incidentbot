@@ -16,6 +16,7 @@ const TICK = "`"
 
 var (
 	actions = map[string]regexp.Regexp{
+		"new":		  *regexp.MustCompile(`new`),
 		"hello":          *regexp.MustCompile(`hello.+`),
 		"reserve":        *regexp.MustCompile(`(?m)^\<\@[A-Z0-9]+\>\sreserve\s(.+)`),
 		"release":        *regexp.MustCompile(`(?m)^\<\@[A-Z0-9]+\>\srelease\s(.+)`),

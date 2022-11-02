@@ -69,6 +69,8 @@ func (h *Handler) CallbackEvent(event slackevents.EventsAPIEvent) error {
 	// Now we determine what to do with it
 	ea.Action = h.getAction(ea.Event.Text)
 	switch ea.Action {
+	case "new":
+		return h.newIncident(ea)
 	case "hello":
 		return h.sayHello(ea)
 	case "reserve", "reserve_dm":
@@ -122,6 +124,24 @@ func (h *Handler) sayHello(ea *EventAction) error {
 
 	h.client.PostMessage(ev.Channel, slack.MsgOptionText("Hello"+u.Name+".", false))
 	return nil
+}
+
+func (h *Handler) newIncident(ea *EventAction) error {
+        ev := ea.Event
+/*        u, err := h.getUser(ev.User)
+        if err != nil {
+                log.Errorf("%+v", err)
+                h.errorReply(ev.Channel, "")
+                return err
+        }
+*/
+
+       // Generate a new incident ID
+//       incident_id := 
+
+
+        h.client.PostMessage(ev.Channel, slack.MsgOptionText(":rotating_light: Creating a new incident - #", false))
+        return nil
 }
 
 func (h *Handler) getCurrentResText(resource *models.Resource, mention bool) (string, error) {
