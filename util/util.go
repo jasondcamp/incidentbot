@@ -5,6 +5,10 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"database/sql"
+
+	log "github.com/sirupsen/logrus"
+	_ "github.com/go-sql-driver/mysql"
 )
 
 func Ordinalize(num int) string {
@@ -83,3 +87,23 @@ func InSlice(arr []string, str string) bool {
 	return false
 }
 
+func LogEvent(incident_id string, user string,  action string, description string) bool {
+	// This function will log an event to the incident table
+	db, err := sql.Open("mysql", "incidentbot:AVNS_67iDl956qEd8uYA_wNT@tcp(batchco-db-do-user-1953615-0.b.db.ondigitalocean.com:25060)/incidentbot")
+	defer db.Close()
+
+	if err != nil {
+		log.Error(err)
+		return false
+	}
+
+	sql := "INSERT INTO incident_log (incident_id, user,  action, description) VALUES (" + incident_id + ", '" + user + "', '" + action + "', '" + description + "')"
+	_, err4 := db.Exec(sql)
+
+	if err4 != nil {
+		log.Error(err4)
+		return false
+	}
+
+	return true
+}

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+        "database/sql"
+	"strconv"
 
 	"github.com/jasondcamp/incidentbot/data"
 	e "github.com/jasondcamp/incidentbot/err"
@@ -12,6 +14,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
+        _ "github.com/go-sql-driver/mysql"
 )
 
 type Handler struct {
@@ -68,36 +71,24 @@ func (h *Handler) CallbackEvent(event slackevents.EventsAPIEvent) error {
 
 	// Now we determine what to do with it
 	ea.Action = h.getAction(ea.Event.Text)
+	log.Infof("Parsing action: %+v", ea.Action)
 	switch ea.Action {
-	case "new":
+	case "new", "start":
 		return h.newIncident(ea)
+	case "archive", "single_archive":
+		return h.archiveIncident(ea)
+	case "update-summary":
+		return h.updateSummary(ea)
+	case "update-severity":
+		return h.updateSeverity(ea)
 	case "hello":
 		return h.sayHello(ea)
-	case "reserve", "reserve_dm":
-		return h.reserve(ea)
-	case "release", "release_dm":
-		return h.release(ea)
-	case "removeme", "removeme_dm":
-		return h.removeme(ea)
-	case "removeresource", "removeresource_dm":
-		return h.removeresource(ea)
-	case "clear", "clear_dm":
-		return h.clear(ea)
-	case "kick", "kick_empty", "kick_nonuser", "kick_dm":
-		return h.kick(ea)
-	case "nuke":
-		return h.nuke(ea)
-	case "nuke_dm":
-		return h.reply(ea, "You must perform a nuke action from a public channel", false)
-	case "all_status", "all_status_dm", "my_status", "my_status_dm":
-		return h.allStatus(ea)
-	case "single_status", "single_status_dm":
-		return h.singleStatus(ea)
 	case "prune", "prune_dm":
 		return h.prune(ea)
 	case "help", "help_dm":
 		return h.help(ea)
 	default:
+		log.Errorf("Unknown action: %+v", ea.Action)
 		return h.reply(ea, "I'm sorry, I don't know what to do with that request", false)
 	}
 }
@@ -128,50 +119,129 @@ func (h *Handler) sayHello(ea *EventAction) error {
 
 func (h *Handler) newIncident(ea *EventAction) error {
         ev := ea.Event
-/*        u, err := h.getUser(ev.User)
-        if err != nil {
-                log.Errorf("%+v", err)
-                h.errorReply(ev.Channel, "")
-                return err
-        }
-*/
 
        // Generate a new incident ID
-//       incident_id := 
+	db, err := sql.Open("mysql", "incidentbot:AVNS_67iDl956qEd8uYA_wNT@tcp(batchco-db-do-user-1953615-0.b.db.ondigitalocean.com:25060)/incidentbot")
+	defer db.Close()
 
+	if err != nil {
+		log.Error(err)
+		h.client.PostMessage(ev.Channel, slack.MsgOptionText("Configuration error, please check logs", false))
+		return nil
+	}
 
-        h.client.PostMessage(ev.Channel, slack.MsgOptionText(":rotating_light: Creating a new incident - #", false))
+	var incident_id string
+	err2 := db.QueryRow("select id from incidents order by id desc limit 1").Scan(&incident_id)
+	switch {
+	case err2 == sql.ErrNoRows:
+		incident_id = "1"
+	case err2 != nil:
+		log.Error(err2)
+		h.client.PostMessage(ev.Channel, slack.MsgOptionText("Configuration error, please check logs", false))
+		return nil
+	default:
+       		incident_int, _ := strconv.Atoi(incident_id)
+		incident_id = strconv.Itoa(incident_int + 1)	
+	}
+
+	// Communicate to client
+        h.client.PostMessage(ev.Channel, slack.MsgOptionText(":rotating_light: Creating a new incident - #" + incident_id, false))
+
+        // Create new channel for incident
+        h.client.PostMessage(ev.Channel, slack.MsgOptionText(":white_check_mark: Creating a new channel - #incident-" + incident_id, false))
+        response, err6 := h.client.CreateConversation("incident-" + incident_id, false)
+        if err6 != nil {
+                log.Error(err6)
+        }
+        incident_channel_id := response.ID
+
+	// Create new incident
+	user, _ := h.getUser(ea.Event.User)
+	sql := "INSERT INTO incidents (id, incident_opened_by, state, chat_room) VALUES (" + incident_id + ",'" + user.ID  + "', 'new', '" + incident_channel_id + "' )"
+	_, err4 := db.Exec(sql)
+
+	if err4 != nil {
+		log.Error(err4)
+	}
+
+	// Add incidentbot into new channel
+        h.client.PostMessage(ev.Channel, slack.MsgOptionText(":white_check_mark: Adding users to #incident-" + incident_id, false))
+	_, _, _, err7 := h.client.JoinConversation(incident_channel_id)
+	if err7 != nil {
+		log.Error(err7)
+	}
+
+	// Add creator into new channel
+	h.client.InviteUsersToConversation(incident_channel_id, user.ID)
+
+        util.LogEvent(incident_id, user.ID, "cmd_new", "Created new incident from slack")
         return nil
 }
 
-func (h *Handler) getCurrentResText(resource *models.Resource, mention bool) (string, error) {
-	q, err := h.data.GetQueueForResource(resource.Name, resource.Env)
-	if err != nil {
-		return "", err
+func (h *Handler) archiveIncident(ea *EventAction) error {
+	// This function will archive a chat room
+	ev := ea.Event
+	user, _ := h.getUser(ea.Event.User)
+
+	matches := h.getMatches(ea.Action, ev.Text)
+	log.Error(matches)
+	if len(matches) == 0 {
+		h.client.PostMessage(ev.Channel, slack.MsgOptionText(":sos: Usage: archive <incident_id>", false))
+	} else {
+        	h.client.PostMessage(ev.Channel, slack.MsgOptionText("Archiving incident chat - incident - #" + matches[0], false))
+
+		db, err := sql.Open("mysql", "incidentbot:AVNS_67iDl956qEd8uYA_wNT@tcp(batchco-db-do-user-1953615-0.b.db.ondigitalocean.com:25060)/incidentbot")
+		defer db.Close()
+
+		if err != nil {
+			log.Error(err)
+			h.client.PostMessage(ev.Channel, slack.MsgOptionText("Configuration error, please check logs", false))
+		return nil
+		}
+
+		var incident_chat_room string
+		db.QueryRow("select chat_room from incidents where id=" + matches[0]).Scan(&incident_chat_room)
+		h.client.ArchiveConversation(incident_chat_room)
 	}
 
-	msg := ""
-	queue := []string{}
+	util.LogEvent(matches[0], user.ID, "cmd_archive", "Archived chat room")
+	return nil
+}
 
-	switch len(q.Reservations) {
-	case 0:
-		msg = fmt.Sprintf("`%s` is free", resource)
-	case 1:
-		user := h.getUserDisplayWithDuration(q.Reservations[0], mention)
-		msg = fmt.Sprintf("`%s` is currently reserved by %s", resource, user)
-	default:
-		verb := "is"
-		for _, next := range q.Reservations[1:] {
-			queue = append(queue, h.getUserDisplayWithDuration(next, false))
-		}
-		if len(queue) > 1 {
-			verb = "are"
-		}
-		user := h.getUserDisplayWithDuration(q.Reservations[0], mention)
-		msg = fmt.Sprintf("`%s` is currently reserved by %s. %s %s waiting.", resource, user, strings.Join(queue, ", "), verb)
-	}
+func (h *Handler) updateSummary(ea *EventAction) error {
+	// This function will update the summary of an incident
+	ev := ea.Event
+	user, _ := h.getUser(ea.Event.User)
+	matches := h.getMatches(ea.Action, ev.Text)
 
-	return msg, nil
+	// Post update messages
+	h.client.PostMessage(ev.Channel, slack.MsgOptionText("Updating summary for incident - #" + matches[0], false))
+
+	h.updateIncidentField(matches[0], "summary", matches[1])
+
+	// Update incident channel
+        h.client.PostMessage("incident-" + matches[0], slack.MsgOptionText("Incident summary updated: " + matches[1], false))
+
+	util.LogEvent(matches[0], user.ID, "update_summary", "Updated summary to: " + matches[1])
+	return nil
+}
+
+func (h *Handler) updateSeverity(ea *EventAction) error {
+	// This function will update the summary of an incident
+	ev := ea.Event
+	user, _ := h.getUser(ea.Event.User)
+	matches := h.getMatches(ea.Action, ev.Text)
+
+	// Post update messages
+	h.client.PostMessage(ev.Channel, slack.MsgOptionText("Updating severity for incident - #" + matches[0], false))
+
+	h.updateIncidentField(matches[0], "severity", matches[1])
+
+	// Update incident channel
+	h.client.PostMessage("incident-" + matches[0], slack.MsgOptionText("Incident severity updated: " + matches[1], false))
+
+	util.LogEvent(matches[0], user.ID, "update_severity", "Updated severity to: " + matches[1])
+	return nil
 }
 
 func (h *Handler) getUserDisplay(user *models.User, mention bool) string {
@@ -216,27 +286,6 @@ func (h *Handler) getMatches(action, text string) []string {
 		}
 	}
 	return ret
-}
-
-func (h *Handler) getResourcesFromCommaList(text string) ([]*models.Resource, error) {
-	ret := []*models.Resource{}
-	split := strings.Split(text, ",")
-	for _, s := range split {
-		if len(s) > 0 {
-			r, err := h.parseResource(strings.Trim(s, " `"))
-			if err != nil {
-				return nil, err
-			}
-			if r != nil {
-				ret = append(ret, r)
-			}
-		}
-	}
-	if len(ret) == 0 {
-		return nil, e.NoResourceProvided
-	}
-
-	return ret, nil
 }
 
 func (h *Handler) parseResource(text string) (*models.Resource, error) {
@@ -323,8 +372,3 @@ func (h *Handler) sendDM(user *models.User, msg string) error {
 	return err
 }
 
-// HasAdminAccess returns if the specified user has access to admin features. If no admins are defined
-// at runtime, all users will have admin access 
-func (h *Handler) HasAdminAccess(user string) bool {
-	return len(h.admins) == 0 || util.InSlice(h.admins, user)
-}
