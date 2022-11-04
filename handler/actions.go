@@ -19,8 +19,8 @@ var (
 
 		"update-summary":        *regexp.MustCompile(`update-summary\s(\d+)\s(.+)`),
 		"update-severity":        *regexp.MustCompile(`update-severity\s(\d+)\s(.+)`),
-		"update-commander":        *regexp.MustCompile(`update-commander\s(\d+)\s(.+)`),
-		"update-manager":        *regexp.MustCompile(`update-manager\s(\d+)\s(.+)`),
+		"update-commander":        *regexp.MustCompile(`update-commander\s(\d+)\s\<\@(.+)\>`),
+		"update-manager":        *regexp.MustCompile(`update-manager\s(\d+)\s\<\@(.+)\>`),
 		"update-state":        *regexp.MustCompile(`update-state\s(\d+)\s(.+)`),
 
 //		"hello":          *regexp.MustCompile(`hello.+`),
