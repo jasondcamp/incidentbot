@@ -21,8 +21,8 @@ type Handler struct {
 	client *slack.Client
 	data   data.Manager
 
-	reqEnv bool
 	admins []string
+	dbConnection data.dbConnectionInfo
 }
 
 type EventAction struct {
@@ -30,12 +30,12 @@ type EventAction struct {
 	Action string
 }
 
-func New(client *slack.Client, data data.Manager, reqEnv bool, admins []string) *Handler {
+func New(client *slack.Client, data data.Manager,  admins []string, dbConnectionInfo dbConnectionInfo) *Handler {
 	return &Handler{
 		client: client,
 		data:   data,
-		reqEnv: reqEnv,
 		admins: admins,
+		dbConnectionInfo: dbConnectionInfo,
 	}
 }
 
@@ -87,7 +87,7 @@ func (h *Handler) CallbackEvent(event slackevents.EventsAPIEvent) error {
 		return h.updateManager(ea)
 	case "update-state":
 		return h.updateState(ea)
-	case "status":
+	case "status", "status_inroom":
 		return h.showStatus(ea)
 
 	case "hello":
@@ -191,9 +191,8 @@ func (h *Handler) archiveIncident(ea *EventAction) error {
 	// This function will archive a chat room
 	ev := ea.Event
 	user, _ := h.getUser(ea.Event.User)
-
 	matches := h.getMatches(ea.Action, ev.Text)
-	log.Error(matches)
+
 	if len(matches) == 0 {
 		h.client.PostMessage(ev.Channel, slack.MsgOptionText(":sos: Usage: archive <incident_id>", false))
 	} else {
@@ -222,15 +221,40 @@ func (h *Handler) showStatus(ea *EventAction) error {
 	ev := ea.Event
 	matches := h.getMatches(ea.Action, ev.Text)
 
-	incident = util.GetIncident(matches[0])
+	incident_id := h.GetIncidentId(ea, matches)
 
+	incident := h.GetIncident(incident_id)
 
-	var current_status string
-	current_status = "Incident #: " + incident.id
-	
+	current_status := "```Incident # : " + strconv.Itoa(incident.Id) + "\n"
+	current_status += "Summary    : " + incident.Summary.String + "\n"
+	current_status += "Opened By  : " + incident.Openedby.String + "\n"
+	current_status += "Opened On  : " + incident.Created.String + "\n"
+	current_status += "Commander  : " + incident.Commander.String + "\n"
+	current_status += "Manager    : " + incident.Manager.String + "\n"
+	current_status += "Severity   : " + incident.Severity.String + "\n"
+	current_status += "State      : " + incident.State.String + "\n"
+	current_status += "Chat Room  : " + incident.Chat_room.String + "\n"
+	current_status += "```"
 
+	h.client.PostMessage(ev.Channel, slack.MsgOptionText(current_status, false))
+
+	return nil
 }
 
+func (h *Handler) GetIncidentId(ea *EventAction, matches []string) string {
+	// This function will get the incident ID from the event or Action
+	ev := ea.Event
+
+	// See if we're in an incident room
+	log.Error(ev.Channel)
+	if ev.Channel == "incident-30" {
+		log.Error("JASON")
+	} else {
+		return matches[0]
+	}
+
+	return ""
+}
 
 func (h *Handler) updateSummary(ea *EventAction) error {
 	// This function will update the summary of an incident
@@ -378,26 +402,6 @@ func (h *Handler) getMatches(action, text string) []string {
 	return ret
 }
 
-func (h *Handler) parseResource(text string) (*models.Resource, error) {
-	split := strings.Split(text, "|")
-	switch len(split) {
-	case 1:
-		if h.reqEnv {
-			return nil, e.InvalidResourceFormat
-		}
-		return &models.Resource{
-			Name: split[0],
-		}, nil
-	case 2:
-		return &models.Resource{
-			Name: split[1],
-			Env:  split[0],
-		}, nil
-	default:
-		return nil, nil
-	}
-}
-
 func (h *Handler) getUser(uid string) (*models.User, error) {
 	u, err := h.client.GetUserInfo(uid)
 	if err != nil {
@@ -462,3 +466,54 @@ func (h *Handler) sendDM(user *models.User, msg string) error {
 	return err
 }
 
+func (h *Handler) GetIncident(incident_id string)  *data.Incident {
+        // This function will retrieve an incident from the database
+        db, err := sql.Open("mysql", "incidentbot:AVNS_67iDl956qEd8uYA_wNT@tcp(batchco-db-do-user-1953615-0.b.db.ondigitalocean.com:25060)/incidentbot")
+        defer db.Close()
+
+        if err != nil {
+                log.Error(err)
+                return nil
+        }
+
+        sql := "SELECT summary, incident_opened_by, incident_commander, incident_manager, severity, state, chat_room, incident_created, incident_start, incident_end FROM incidents WHERE id=" + incident_id
+        incident := new(data.Incident)
+        incident.Id, _  = strconv.Atoi(incident_id)
+        row := db.QueryRow(sql)
+
+        err2 := row.Scan(&incident.Summary, &incident.Openedby, &incident.Commander, &incident.Manager, &incident.Severity,  &incident.State, &incident.Chat_room, &incident.Created, &incident.Start, &incident.End)
+	if err2 != nil {
+		log.Error(err2)
+	}
+
+	incident.Openedby.String = h.GetUserName(incident.Openedby.String)
+	incident.Commander.String = h.GetUserName(incident.Commander.String)
+	incident.Manager.String = h.GetUserName(incident.Manager.String)
+
+	if incident.Severity.String == "" {
+		incident.Severity.String = "Not Set"
+	}
+
+        return incident
+}
+
+func (h *Handler) GetUserName(user_id string)  string {
+	if user_id == "" {
+		return "Not Set"
+	} else {
+		user_data, _ := h.getUser(user_id)
+		// TODO Add error checking
+		return user_data.Name
+	}
+}
+
+func (h *Handler) ConnectDB(dbConnectionInfo dbConnectionInfo) *sql.DB {
+
+	connection_string := dbConnectionInfo.Username + ":" + dbConnectionInfo.Password + "@tcp(" + dbConnectionInfo.Host + ":" + dbConnectionInfo.Port + ")/" + dbConnectionInfo.Database
+	db, err := sql.Open("mysql", connection_string)
+	if err != nil {
+		log.Error(err)
+	}
+
+	return db
+}

@@ -9,7 +9,6 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	_ "github.com/go-sql-driver/mysql"
-	"github.com/jasondcamp/incidentbot/data"
 )
 
 func Ordinalize(num int) string {
@@ -88,34 +87,6 @@ func InSlice(arr []string, str string) bool {
 	return false
 }
 
-func GetIncident(incident_id string)  *data.Incident {
-	// This function will retrieve an incident from the database
-	db, err := sql.Open("mysql", "incidentbot:AVNS_67iDl956qEd8uYA_wNT@tcp(batchco-db-do-user-1953615-0.b.db.ondigitalocean.com:25060)/incidentbot")
-	defer db.Close()
-
-	if err != nil {
-		log.Error(err)
-		return nil
-	}
-
-	sql := "SELECT summary, incident_opened_by, incident_commander, incident_manager, state, chat_room, incident_created, incident_start, incident_end FROM incidents WHERE id=" + incident_id 
-	incident := new(data.Incident)
-//	var incident []string
-	row := db.QueryRow(sql)
-
-	_ = row.Scan(&incident.summary, &incident.opened_by, &incident.commander)
-
-/*	switch {
-	case err2 == sql.ErrNoRows:
-		return nil
-	case err2 != nil:
-		log.Error(err2)
-		return nil
-	}
-*/
-	return incident
-}
-
 func LogEvent(incident_id string, user string,  action string, description string) bool {
 	// This function will log an event to the incident table
 	db, err := sql.Open("mysql", "incidentbot:AVNS_67iDl956qEd8uYA_wNT@tcp(batchco-db-do-user-1953615-0.b.db.ondigitalocean.com:25060)/incidentbot")
@@ -136,3 +107,4 @@ func LogEvent(incident_id string, user string,  action string, description strin
 
 	return true
 }
+
