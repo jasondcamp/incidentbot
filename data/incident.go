@@ -1,14 +1,19 @@
 package data
 
+import (
+	"database/sql"
+)
+
 type Incident struct {
-	id			int
-	summary			string
-	opened_by	string
-	commander	string
-	manager	string
-	state			string
-	chat_room		string
-	created	string
-	start		string
-	end		string
+	Id		int
+	Summary		sql.NullString
+	Openedby	sql.NullString
+	Commander	sql.NullString
+	Manager		sql.NullString
+	Severity	sql.NullString
+	State		sql.NullString
+	Chat_room	sql.NullString
+	Created		sql.NullString
+	Start		sql.NullString
+	End		sql.NullString
 }

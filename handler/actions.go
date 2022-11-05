@@ -23,6 +23,9 @@ var (
 		"update-manager":        *regexp.MustCompile(`update-manager\s(\d+)\s\<\@(.+)\>`),
 		"update-state":        *regexp.MustCompile(`update-state\s(\d+)\s(.+)`),
 
+		"status": 	  *regexp.MustCompile(`status\s(\d+)`),
+//		"status_inroom":   *regexp.MustCompile(`status`),
+
 //		"hello":          *regexp.MustCompile(`hello.+`),
 //		"reserve":        *regexp.MustCompile(`(?m)^\<\@[A-Z0-9]+\>\sreserve\s(.+)`),
 //		"release":        *regexp.MustCompile(`(?m)^\<\@[A-Z0-9]+\>\srelease\s(.+)`),

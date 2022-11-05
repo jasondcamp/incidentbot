@@ -22,10 +22,14 @@ var (
 	listenPort     int
 	debug          bool
 	admins         string
-	reqResourceEnv bool
 	pruneEnabled   bool
 	pruneInterval  int
 	pruneExpire    int
+	dbUsername	string
+	dbPassword	string
+	dbHost		string
+	dbPort		string
+	dbDatabase	string
 )
 
 func main() {
@@ -34,10 +38,16 @@ func main() {
 	flag.IntVar(&listenPort, "listen-port", util.LookupEnvOrInt("LISTEN_PORT", 4512), "Listen port")
 	flag.BoolVar(&debug, "debug", util.LookupEnvOrBool("DEBUG", false), "Debug mode")
 	flag.StringVar(&admins, "admins", util.LookupEnvOrString("SLACK_ADMINS", ""), "Turn on administrative commands for specific admins, comma separated list")
-	flag.BoolVar(&reqResourceEnv, "require-resource-env", util.LookupEnvOrBool("REQUIRE_RESOURCE_ENV", true), "Require resource reservation to include environment")
 	flag.BoolVar(&pruneEnabled, "prune-enabled", util.LookupEnvOrBool("PRUNE_ENABLED", true), "Enable pruning available resources automatically")
 	flag.IntVar(&pruneInterval, "prune-interval", util.LookupEnvOrInt("PRUNE_INTERVAL", 1), "Automatic pruning interval in hours")
 	flag.IntVar(&pruneExpire, "prune-expire", util.LookupEnvOrInt("PRUNE_EXPIRE", 168), "Automatic prune expiration time in hours")
+
+	flag.StringVar(&dbUsername, "db-username", util.LookupEnvOrString("DB_USERNAME", "incidentbot"), "Database Username")
+	flag.StringVar(&dbPassword, "db-password", util.LookupEnvOrString("DB_PASSWORD", ""), "Database Password")
+	flag.StringVar(&dbHost, "db-host", util.LookupEnvOrString("DB_HOST", "localhost"), "Database Host")
+	flag.StringVar(&dbPort, "db-port", util.LookupEnvOrString("DB_PORT", "3306"), "Database Port")
+	flag.StringVar(&dbDatabase, "db-database", util.LookupEnvOrString("DB_DATABASE", "incidentbot"), "Database Database")
+	
 	flag.Parse()
 
 	// Make sure required vars are set
@@ -73,7 +83,7 @@ func main() {
 		log.Infof("Automatic pruning is disabled.")
 	}
 
-	handler := handler.New(api, data, reqResourceEnv, util.ParseAdmins(admins))
+	handler := handler.New(api, data, util.ParseAdmins(admins), dbConnectionInfo)
 
 	http.HandleFunc("/events", func(w http.ResponseWriter, r *http.Request) {
 		buf := new(bytes.Buffer)
