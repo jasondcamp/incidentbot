@@ -140,13 +140,15 @@ func (h *Handler) help(ea *EventAction) error {
 
 	helpText += TICK + "new|start" + TICK + " This will open a new incident. It will assign an incident number, create an incident slack room, open a ticket, and allow the incident opener to set details about the incident.\n\n"
 	helpText += TICK + "archive <incident_id>" + TICK + " This will archive the incident chat room. It will not update the incident status.\n\n"
-	helpText += TICK + "update-summary <incident_id> <summary>" + TICK + " This will update the summary of an incident\n\n"
-        helpText += TICK + "update-severity <incident_id> <SEV0|SEV1|SEV2|SEV3|SEV4>" + TICK + " This will update the severity of an incident\n\n"
-        helpText += TICK + "update-commander <incident_id> <@commander>" + TICK + " This will update the commander of an incident\n\n"
-        helpText += TICK + "update-manager <incident_id> <@manager>" + TICK + " This will update the manager of an incident\n\n"
-        helpText += TICK + "update-state <incident_id> <new|inprogress|stalled|resolved>" + TICK + " This will update the state of an incident\n\n"
-	helpText += TICK + "audit-log <incident_id>" + TICK + " Display audit log from the detailed log table\n\n"
-	helpText += TICK + "invite <incident_id> <username|usergroup>" + TICK + "Invite user or group of users to incident\n\n"
+
+	helpText += "\n\nThese commands must be used in the incident channel itself:\n\n"
+	helpText += TICK + "update-summary <summary>" + TICK + " This will update the summary of an incident\n\n"
+        helpText += TICK + "update-severity <SEV0|SEV1|SEV2|SEV3|SEV4>" + TICK + " This will update the severity of an incident\n\n"
+        helpText += TICK + "update-commander <@commander>" + TICK + " This will update the commander of an incident\n\n"
+        helpText += TICK + "update-manager <@manager>" + TICK + " This will update the manager of an incident\n\n"
+        helpText += TICK + "update-state <new|inprogress|stalled|resolved>" + TICK + " This will update the state of an incident\n\n"
+	helpText += TICK + "audit-log" + TICK + " Display audit log from the detailed log table\n\n"
+	helpText += TICK + "invite <username|usergroup>" + TICK + "Invite user or group of users to incident\n\n"
 	h.reply(ea, helpText, false)
 	return nil
 }
