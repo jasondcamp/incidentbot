@@ -2,10 +2,8 @@ package handler
 
 import (
 	"regexp"
-	"database/sql"
 
 	log "github.com/sirupsen/logrus"
-	_ "github.com/go-sql-driver/mysql"
 )
 
 const TICK = "`"
@@ -17,14 +15,15 @@ var (
 		"archive":	  *regexp.MustCompile(`archive\s(.+)`),
 		"single_archive": *regexp.MustCompile(`archive`),
 
-		"update-summary":        *regexp.MustCompile(`update-summary\s(\d+)\s(.+)`),
-		"update-severity":        *regexp.MustCompile(`update-severity\s(\d+)\s(.+)`),
-		"update-commander":        *regexp.MustCompile(`update-commander\s(\d+)\s\<\@(.+)\>`),
-		"update-manager":        *regexp.MustCompile(`update-manager\s(\d+)\s\<\@(.+)\>`),
-		"update-state":        *regexp.MustCompile(`update-state\s(\d+)\s(.+)`),
+		"update-summary":        *regexp.MustCompile(`update-summary\s(.+)`),
+		"update-severity":        *regexp.MustCompile(`update-severity\s(.+)`),
+		"update-commander":        *regexp.MustCompile(`update-commander\s\<\@(.+)\>`),
+		"update-manager":        *regexp.MustCompile(`update-manager\s\<\@(.+)\>`),
+		"update-state":        *regexp.MustCompile(`update-state\s(.+)`),
 
-		"status": 	  *regexp.MustCompile(`status\s(\d+)`),
-//		"status_inroom":   *regexp.MustCompile(`status`),
+		"status": 	  *regexp.MustCompile(`status\s+(\d+)`),
+		"status_inroom":   *regexp.MustCompile(`status$`),
+		"help": 	*regexp.MustCompile(`help`),
 
 //		"hello":          *regexp.MustCompile(`hello.+`),
 //		"reserve":        *regexp.MustCompile(`(?m)^\<\@[A-Z0-9]+\>\sreserve\s(.+)`),
@@ -86,7 +85,7 @@ func (h *Handler) getAction(text string) string {
 }
 
 func (h *Handler) prune(ea *EventAction) error {
-	resources := h.data.GetResources()
+/*	resources := h.data.GetResources()
 	for _, res := range resources {
 		q, err := h.data.GetQueueForResource(res.Name, res.Env)
 		if err != nil {
@@ -107,13 +106,13 @@ func (h *Handler) prune(ea *EventAction) error {
 	}
 
 	h.reply(ea, msgQueuesPruned, false)
-
+*/
 	return nil
 }
 
 
-func (h *Handler) updateIncidentField(incident_id string, field string, val string) bool {
-	db, err := sql.Open("mysql", "incidentbot:AVNS_67iDl956qEd8uYA_wNT@tcp(batchco-db-do-user-1953615-0.b.db.ondigitalocean.com:25060)/incidentbot")
+func (h *Handler) updateIncidentSQL(incident_id string, field string, val string) bool {
+	db, err := h.ConnectDB()
 	defer db.Close()
 
 	if err != nil {
@@ -141,13 +140,15 @@ func (h *Handler) help(ea *EventAction) error {
 
 	helpText += TICK + "new|start" + TICK + " This will open a new incident. It will assign an incident number, create an incident slack room, open a ticket, and allow the incident opener to set details about the incident.\n\n"
 	helpText += TICK + "archive <incident_id>" + TICK + " This will archive the incident chat room. It will not update the incident status.\n\n"
-	helpText += TICK + "update-summary <incident_id> <summary>" + TICK + " This will update the summary of an incident\n\n"
-        helpText += TICK + "update-severity <incident_id> <SEV0|SEV1|SEV2|SEV3|SEV4>" + TICK + " This will update the severity of an incident\n\n"
-        helpText += TICK + "update-commander <incident_id> <@commander>" + TICK + " This will update the commander of an incident\n\n"
-        helpText += TICK + "update-manager <incident_id> <@manager>" + TICK + " This will update the manager of an incident\n\n"
-        helpText += TICK + "update-state <incident_id> <new|inprogress|stalled|resolved>" + TICK + " This will update the state of an incident\n\n"
-	helpText += TICK + "audit-log <incident_id>" + TICK + " Display audit log from the detailed log table\n\n"
-	helpText += TICK + "invite <incident_id> <username|usergroup>" + TICK + "Invite user or group of users to incident\n\n"
+
+	helpText += "\n\nThese commands must be used in the incident channel itself:\n\n"
+	helpText += TICK + "update-summary <summary>" + TICK + " This will update the summary of an incident\n\n"
+        helpText += TICK + "update-severity <SEV0|SEV1|SEV2|SEV3|SEV4>" + TICK + " This will update the severity of an incident\n\n"
+        helpText += TICK + "update-commander <@commander>" + TICK + " This will update the commander of an incident\n\n"
+        helpText += TICK + "update-manager <@manager>" + TICK + " This will update the manager of an incident\n\n"
+        helpText += TICK + "update-state <new|inprogress|stalled|resolved>" + TICK + " This will update the state of an incident\n\n"
+	helpText += TICK + "audit-log" + TICK + " Display audit log from the detailed log table\n\n"
+	helpText += TICK + "invite <username|usergroup>" + TICK + "Invite user or group of users to incident\n\n"
 	h.reply(ea, helpText, false)
 	return nil
 }

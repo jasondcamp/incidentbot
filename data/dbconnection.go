@@ -1,8 +1,8 @@
 package data
 
-type dbConnectionInfo struct {
+type DbConnectionInfo struct {
 	Host		string
-	User		string
+	Username	string
 	Password	string
 	Port		string
 	Database	string

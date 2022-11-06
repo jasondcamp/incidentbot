@@ -19,10 +19,8 @@ import (
 
 type Handler struct {
 	client *slack.Client
-	data   data.Manager
-
 	admins []string
-	dbConnection data.dbConnectionInfo
+	dbConnectionInfo *data.DbConnectionInfo
 }
 
 type EventAction struct {
@@ -30,10 +28,9 @@ type EventAction struct {
 	Action string
 }
 
-func New(client *slack.Client, data data.Manager,  admins []string, dbConnectionInfo dbConnectionInfo) *Handler {
+func New(client *slack.Client, admins []string, dbConnectionInfo *data.DbConnectionInfo) *Handler {
 	return &Handler{
 		client: client,
-		data:   data,
 		admins: admins,
 		dbConnectionInfo: dbConnectionInfo,
 	}
@@ -78,15 +75,15 @@ func (h *Handler) CallbackEvent(event slackevents.EventsAPIEvent) error {
 	case "archive", "single_archive":
 		return h.archiveIncident(ea)
 	case "update-summary":
-		return h.updateSummary(ea)
+		return h.updateIncidentField(ea, "summary")
 	case "update-severity":
-		return h.updateSeverity(ea)
+		return h.updateIncidentField(ea, "severity")
         case "update-commander":
-                return h.updateCommander(ea)
+                return h.updateIncidentField(ea, "commander")
 	case "update-manager":
-		return h.updateManager(ea)
+		return h.updateIncidentField(ea, "manager")
 	case "update-state":
-		return h.updateState(ea)
+		return h.updateIncidentField(ea, "state")
 	case "status", "status_inroom":
 		return h.showStatus(ea)
 
@@ -130,7 +127,7 @@ func (h *Handler) newIncident(ea *EventAction) error {
         ev := ea.Event
 
        // Generate a new incident ID
-	db, err := sql.Open("mysql", "incidentbot:AVNS_67iDl956qEd8uYA_wNT@tcp(batchco-db-do-user-1953615-0.b.db.ondigitalocean.com:25060)/incidentbot")
+	db, err := h.ConnectDB()
 	defer db.Close()
 
 	if err != nil {
@@ -183,7 +180,7 @@ func (h *Handler) newIncident(ea *EventAction) error {
 	// Add creator into new channel
 	h.client.InviteUsersToConversation(incident_channel_id, user.ID)
 
-        util.LogEvent(incident_id, user.ID, "cmd_new", "Created new incident from slack")
+        h.LogEvent(incident_id, user.ID, "cmd_new", "Created new incident from slack")
         return nil
 }
 
@@ -198,7 +195,7 @@ func (h *Handler) archiveIncident(ea *EventAction) error {
 	} else {
         	h.client.PostMessage(ev.Channel, slack.MsgOptionText("Archiving incident chat - incident - #" + matches[0], false))
 
-		db, err := sql.Open("mysql", "incidentbot:AVNS_67iDl956qEd8uYA_wNT@tcp(batchco-db-do-user-1953615-0.b.db.ondigitalocean.com:25060)/incidentbot")
+		db, err := h.ConnectDB()
 		defer db.Close()
 
 		if err != nil {
@@ -212,7 +209,7 @@ func (h *Handler) archiveIncident(ea *EventAction) error {
 		h.client.ArchiveConversation(incident_chat_room)
 	}
 
-	util.LogEvent(matches[0], user.ID, "cmd_archive", "Archived chat room")
+	h.LogEvent(matches[0], user.ID, "cmd_archive", "Archived chat room")
 	return nil
 }
 
@@ -221,7 +218,11 @@ func (h *Handler) showStatus(ea *EventAction) error {
 	ev := ea.Event
 	matches := h.getMatches(ea.Action, ev.Text)
 
-	incident_id := h.GetIncidentId(ea, matches)
+	incident_id := h.GetIncidentId(ev.Channel, matches)
+	if incident_id == "" {
+		h.client.PostMessage(ev.Channel, slack.MsgOptionText("Usage: @IncidentBot status <incident_id>", false))
+		return nil
+	}
 
 	incident := h.GetIncident(incident_id)
 
@@ -241,36 +242,62 @@ func (h *Handler) showStatus(ea *EventAction) error {
 	return nil
 }
 
-func (h *Handler) GetIncidentId(ea *EventAction, matches []string) string {
-	// This function will get the incident ID from the event or Action
-	ev := ea.Event
+func (h *Handler) GetIncidentId(chat_room string, matches []string) string {
+	incident_id := h.InIncidentChatroom(chat_room)
 
-	// See if we're in an incident room
-	log.Error(ev.Channel)
-	if ev.Channel == "incident-30" {
-		log.Error("JASON")
-	} else {
-		return matches[0]
+	if incident_id == "" {
+		if len(matches) == 0 {
+			return ""
+		} else {
+			return matches[0]
+		}
 	}
 
-	return ""
+	return incident_id
+
 }
 
-func (h *Handler) updateSummary(ea *EventAction) error {
-	// This function will update the summary of an incident
+func (h *Handler) InIncidentChatroom(chat_room string) string {
+	db, err := h.ConnectDB()
+	defer db.Close()
+
+	if err != nil {
+		log.Error(err)
+	}
+
+	var incident_id string
+	err2 := db.QueryRow("SELECT id FROM incidents WHERE chat_room='" + chat_room + "'").Scan(&incident_id)
+	switch {
+        case err2 == sql.ErrNoRows:
+                return ""
+        case err2 != nil:
+                return ""
+        }
+
+	return incident_id
+}
+
+func (h *Handler) updateIncidentField(ea *EventAction, incident_field string) error {
+	// This function will update a field of an incident
 	ev := ea.Event
 	user, _ := h.getUser(ea.Event.User)
 	matches := h.getMatches(ea.Action, ev.Text)
 
-	// Post update messages
-	h.client.PostMessage(ev.Channel, slack.MsgOptionText("Updating summary for incident - #" + matches[0], false))
+	incident_id := h.GetIncidentId(ev.Channel, matches)
+	if incident_id == "" {
+		h.client.PostMessage(ev.Channel, slack.MsgOptionText("Usage: Internal Error, incident could not be found", false))
+		return nil
+	}
 
-	h.updateIncidentField(matches[0], "summary", matches[1])
+	// Post update messages
+	h.client.PostMessage(ev.Channel, slack.MsgOptionText("Updating summary for incident - #" + incident_id, false))
+
+	h.updateIncidentSQL(incident_id, incident_field, matches[0])
 
 	// Update incident channel
-        h.client.PostMessage("incident-" + matches[0], slack.MsgOptionText("Incident summary updated: " + matches[1], false))
+	h.client.PostMessage("incident-" + incident_id, slack.MsgOptionText("Incident " + incident_field + " updated: " + matches[0], false))
 
-	util.LogEvent(matches[0], user.ID, "update_summary", "Updated summary to: " + matches[1])
+	h.LogEvent(incident_id, user.ID, "update_" + incident_field, "Updated " + incident_field + " to: " + matches[0])
 	return nil
 }
 
@@ -290,46 +317,12 @@ func (h *Handler) updateSeverity(ea *EventAction) error {
 	// Post update messages
 	h.client.PostMessage(ev.Channel, slack.MsgOptionText("Updating severity for incident - #" + matches[0], false))
 
-	h.updateIncidentField(matches[0], "severity", matches[1])
+	h.updateIncidentSQL(matches[0], "severity", matches[1])
 
 	// Update incident channel
 	h.client.PostMessage("incident-" + matches[0], slack.MsgOptionText("Incident severity updated: " + matches[1], false))
 
-	util.LogEvent(matches[0], user.ID, "update_severity", "Updated severity to: " + matches[1])
-	return nil
-}
-
-func (h *Handler) updateCommander(ea *EventAction) error {
-	// This function will update the commander of an incident
-	ev := ea.Event
-	user, _ := h.getUser(ea.Event.User)
-	matches := h.getMatches(ea.Action, ev.Text)
-
-	// Post update messages
-	h.client.PostMessage(ev.Channel, slack.MsgOptionText("Updating incident commander for incident - #" + matches[0], false))
-	h.updateIncidentField(matches[0], "incident_commander", matches[1])
-
-	// Update incident channel
-	h.client.PostMessage("incident-" + matches[0], slack.MsgOptionText("Incident commander updated: <@" + matches[1] + ">", false))
-
-	util.LogEvent(matches[0], user.ID, "update_commander", "Updated commander to: " + matches[1])
-	return nil
-}
-
-func (h *Handler) updateManager(ea *EventAction) error {
-	// This function will update the manager of an incident
-	ev := ea.Event
-	user, _ := h.getUser(ea.Event.User)
-	matches := h.getMatches(ea.Action, ev.Text)
-
-	// Post update messages
-	h.client.PostMessage(ev.Channel, slack.MsgOptionText("Updating incident manager for incident - #" + matches[0], false))
-	h.updateIncidentField(matches[0], "incident_manager", matches[1])
-
-	// Update incident channel
-	h.client.PostMessage("incident-" + matches[0], slack.MsgOptionText("Incident manager updated: <@" + matches[1] + ">", false))
-
-	util.LogEvent(matches[0], user.ID, "update_manager", "Updated manager to: " + matches[1])
+	h.LogEvent(matches[0], user.ID, "update_severity", "Updated severity to: " + matches[1])
 	return nil
 }
 
@@ -349,12 +342,12 @@ func (h *Handler) updateState(ea *EventAction) error {
         // Post update messages
         h.client.PostMessage(ev.Channel, slack.MsgOptionText("Updating state for incident - #" + matches[0], false))
 
-        h.updateIncidentField(matches[0], "state", matches[1])
+        h.updateIncidentSQL(matches[0], "state", matches[1])
 
         // Update incident channel
         h.client.PostMessage("incident-" + matches[0], slack.MsgOptionText("Incident state updated: " + matches[1], false))
 
-        util.LogEvent(matches[0], user.ID, "update_state", "Updated state to: " + matches[1])
+        h.LogEvent(matches[0], user.ID, "update_state", "Updated state to: " + matches[1])
         return nil
 }
 
@@ -468,7 +461,7 @@ func (h *Handler) sendDM(user *models.User, msg string) error {
 
 func (h *Handler) GetIncident(incident_id string)  *data.Incident {
         // This function will retrieve an incident from the database
-        db, err := sql.Open("mysql", "incidentbot:AVNS_67iDl956qEd8uYA_wNT@tcp(batchco-db-do-user-1953615-0.b.db.ondigitalocean.com:25060)/incidentbot")
+	db, err := h.ConnectDB()
         defer db.Close()
 
         if err != nil {
@@ -507,13 +500,30 @@ func (h *Handler) GetUserName(user_id string)  string {
 	}
 }
 
-func (h *Handler) ConnectDB(dbConnectionInfo dbConnectionInfo) *sql.DB {
-
-	connection_string := dbConnectionInfo.Username + ":" + dbConnectionInfo.Password + "@tcp(" + dbConnectionInfo.Host + ":" + dbConnectionInfo.Port + ")/" + dbConnectionInfo.Database
+func (h *Handler) ConnectDB() (*sql.DB, error) {
+	connection_string := h.dbConnectionInfo.Username + ":" + h.dbConnectionInfo.Password + "@tcp(" + h.dbConnectionInfo.Host + ":" + h.dbConnectionInfo.Port + ")/" + h.dbConnectionInfo.Database
 	db, err := sql.Open("mysql", connection_string)
+	return db, err
+}
+
+func (h *Handler) LogEvent(incident_id string, user string,  action string, description string) bool {
+	// This function will log an event to the incident table
+	db, err := h.ConnectDB()
+	defer db.Close()
+
 	if err != nil {
 		log.Error(err)
+		return false
 	}
 
-	return db
+	sql := "INSERT INTO incident_log (incident_id, user,  action, description) VALUES (" + incident_id + ", '" + user + "', '" + action + "', '" + description + "')"
+	_, err2 := db.Exec(sql)
+
+	if err2 != nil {
+		log.Error(err2)
+		return false
+	}
+
+	return true
 }
+
