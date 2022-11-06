@@ -52,17 +52,51 @@ func main() {
 
 	// Make sure required vars are set
 	if token == "" {
-		log.Error("Slack token is required")
+		log.Error("token is required")
 		return
 	}
 	if challenge == "" {
-		log.Error("Slack verification token is required")
+		log.Error("challenge is required")
 		return
 	}
 
-	api := slack.New(token, slack.OptionDebug(debug))
+	dbConnectionInfo := new(data.DbConnectionInfo)
+	if dbUsername == "" {
+		log.Error("db-username is required")
+		return
+	} else {
+		dbConnectionInfo.Username = dbUsername
+	}
 
-	data := data.NewMemory()
+	if dbPassword == "" {
+		log.Error("db-password is required")
+		return
+	} else {
+		dbConnectionInfo.Password = dbPassword
+	}
+
+	if dbHost == "" {
+		log.Error("db-host is required")
+		return
+	} else {
+		dbConnectionInfo.Host = dbHost
+	}
+
+	if dbPort == "" {
+		log.Error("db-port is required")
+		return
+	} else {
+		dbConnectionInfo.Port = dbPort
+	}
+
+	if dbDatabase == "" {
+		log.Error("db-database is required")
+		return
+	} else {
+		dbConnectionInfo.Database = dbDatabase
+	}
+
+	api := slack.New(token, slack.OptionDebug(debug))
 
 	if pruneEnabled {
 		// Prune inactive resources
@@ -70,12 +104,12 @@ func main() {
 		go func() {
 			for {
 				time.Sleep(time.Duration(pruneInterval) * time.Hour)
-				err := data.PruneInactiveResources(pruneExpire)
-				if err != nil {
-					log.Errorf("Error pruning resources: %+v", err)
-				} else {
-					log.Infof("Pruned resources")
-				}
+//				err := data.PruneInactiveResources(pruneExpire)
+//				if err != nil {
+//					log.Errorf("Error pruning resources: %+v", err)
+//				} else {
+//					log.Infof("Pruned resources")
+//				}
 			}
 		}()
 
@@ -83,7 +117,7 @@ func main() {
 		log.Infof("Automatic pruning is disabled.")
 	}
 
-	handler := handler.New(api, data, util.ParseAdmins(admins), dbConnectionInfo)
+	handler := handler.New(api, util.ParseAdmins(admins), dbConnectionInfo)
 
 	http.HandleFunc("/events", func(w http.ResponseWriter, r *http.Request) {
 		buf := new(bytes.Buffer)

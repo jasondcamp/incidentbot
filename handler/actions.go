@@ -2,10 +2,8 @@ package handler
 
 import (
 	"regexp"
-	"database/sql"
 
 	log "github.com/sirupsen/logrus"
-	_ "github.com/go-sql-driver/mysql"
 )
 
 const TICK = "`"
@@ -17,14 +15,15 @@ var (
 		"archive":	  *regexp.MustCompile(`archive\s(.+)`),
 		"single_archive": *regexp.MustCompile(`archive`),
 
-		"update-summary":        *regexp.MustCompile(`update-summary\s(\d+)\s(.+)`),
-		"update-severity":        *regexp.MustCompile(`update-severity\s(\d+)\s(.+)`),
-		"update-commander":        *regexp.MustCompile(`update-commander\s(\d+)\s\<\@(.+)\>`),
-		"update-manager":        *regexp.MustCompile(`update-manager\s(\d+)\s\<\@(.+)\>`),
-		"update-state":        *regexp.MustCompile(`update-state\s(\d+)\s(.+)`),
+		"update-summary":        *regexp.MustCompile(`update-summary\s(.+)`),
+		"update-severity":        *regexp.MustCompile(`update-severity\s(.+)`),
+		"update-commander":        *regexp.MustCompile(`update-commander\s\<\@(.+)\>`),
+		"update-manager":        *regexp.MustCompile(`update-manager\s\<\@(.+)\>`),
+		"update-state":        *regexp.MustCompile(`update-state\s(.+)`),
 
-		"status": 	  *regexp.MustCompile(`status\s(\d+)`),
-//		"status_inroom":   *regexp.MustCompile(`status`),
+		"status": 	  *regexp.MustCompile(`status\s+(\d+)`),
+		"status_inroom":   *regexp.MustCompile(`status$`),
+		"help": 	*regexp.MustCompile(`help`),
 
 //		"hello":          *regexp.MustCompile(`hello.+`),
 //		"reserve":        *regexp.MustCompile(`(?m)^\<\@[A-Z0-9]+\>\sreserve\s(.+)`),
@@ -86,7 +85,7 @@ func (h *Handler) getAction(text string) string {
 }
 
 func (h *Handler) prune(ea *EventAction) error {
-	resources := h.data.GetResources()
+/*	resources := h.data.GetResources()
 	for _, res := range resources {
 		q, err := h.data.GetQueueForResource(res.Name, res.Env)
 		if err != nil {
@@ -107,13 +106,13 @@ func (h *Handler) prune(ea *EventAction) error {
 	}
 
 	h.reply(ea, msgQueuesPruned, false)
-
+*/
 	return nil
 }
 
 
-func (h *Handler) updateIncidentField(incident_id string, field string, val string) bool {
-	db, err := sql.Open("mysql", "incidentbot:AVNS_67iDl956qEd8uYA_wNT@tcp(batchco-db-do-user-1953615-0.b.db.ondigitalocean.com:25060)/incidentbot")
+func (h *Handler) updateIncidentSQL(incident_id string, field string, val string) bool {
+	db, err := h.ConnectDB()
 	defer db.Close()
 
 	if err != nil {
